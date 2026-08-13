@@ -62,11 +62,20 @@ async_session_maker = async_sessionmaker(engine, expire_on_commit=False, class_=
 # create_all 幂等:只创建不存在的表,重复调用安全;生产环境建议换 Alembic 迁移管理表结构变更
 async def init_db() -> None:
     """建表(开发期直接 create_all;生产可用 Alembic 迁移)。"""
+    from sqlalchemy import text  # 延迟导入,避免顶层依赖
+
     from app.db.base import Base
     from app.models import CacheEntry, Chunk, Conversation, Document, EvalRecord, EvalTask, Message, User  # noqa: F401 注册模型
 
     # begin() 保证建表在单个事务内完成,失败自动回滚,不留半成品表
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
+        # create_all 只建新表、不改已有表:SQLite 下手动补加后续新增的可空列
+        # 列已存在时 ALTER 会报 "duplicate column name",吞掉即可(幂等)
+        try:
+            await conn.execute(text("ALTER TABLE eval_tasks ADD COLUMN review TEXT"))
+            logger.info("已为 eval_tasks 补充 review 列")
+        except Exception:
+            pass  # 列已存在(或非 SQLite),忽略
     # 启动日志:确认表结构就绪,排查"表不存在"问题时能一眼定位
     logger.info("数据库表结构已就绪")

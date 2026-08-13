@@ -14,7 +14,7 @@ import uuid
 from datetime import datetime
 from pathlib import Path
 
-from sqlalchemy import select
+from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
@@ -23,26 +23,28 @@ from app.models.evaluation import EvalRecord, EvalTask
 
 logger = logging.getLogger(__name__)
 
-# 样本文档目录
-SAMPLES_DIR = Path(__file__).resolve().parent.parent.parent.parent / "docs" / "data" / "samples"
+def _get_samples_dir():
+    # 兼容没有存储路径时的备用
+    return Path(__file__).resolve().parent.parent.parent.parent / "docs" / "data" / "samples"
 
 
-def list_sample_docs() -> list[dict]:
-    """扫描 docs/data/samples 目录，返回可选文档列表。"""
-    if not SAMPLES_DIR.exists():
-        return []
-    docs = []
-    for f in sorted(SAMPLES_DIR.iterdir()):
-        if f.is_file() and f.suffix.lower() in (".txt", ".md", ".pdf", ".docx", ".xlsx"):
-            docs.append({
-                "name": f.name,
-                "size_bytes": f.stat().st_size,
-                "file_type": f.suffix.lstrip(".").lower(),
-            })
-    return docs
+async def list_eval_docs(db: AsyncSession) -> list[dict]:
+    """扫描 Document 表，返回已入库（status=ready）的文档列表。"""
+    from app.models.document import Document
+    result = await db.execute(select(Document).where(Document.status == "ready").order_by(Document.created_at.desc()))
+    docs = result.scalars().all()
+    return [
+        {
+            "id": d.id,
+            "filename": d.filename,
+            "size_bytes": d.size_bytes or 0,
+            "file_type": d.file_type,
+        }
+        for d in docs
+    ]
 
 
-async def generate_questions(file_names: list[str], num_per_doc: int = 3) -> list[dict]:
+async def generate_questions(db: AsyncSession, doc_ids: list[str], num_per_doc: int = 3) -> list[dict]:
     """使用项目自身 LLM 对指定文档内容生成问答对。"""
     from langchain_openai import ChatOpenAI
 
@@ -57,14 +59,25 @@ async def generate_questions(file_names: list[str], num_per_doc: int = 3) -> lis
         temperature=0.7,
     )
 
+    from app.models.document import Document
     all_questions: list[dict] = []
-    for fname in file_names:
-        fpath = SAMPLES_DIR / fname
-        if not fpath.exists():
-            logger.warning(f"文档不存在，跳过: {fname}")
+    for doc_id in doc_ids:
+        doc = await db.get(Document, doc_id)
+        if not doc:
+            logger.warning(f"文档记录不存在，跳过: {doc_id}")
             continue
 
-        content = fpath.read_text(encoding="utf-8")
+        fpath = Path(doc.stored_path)
+        if not fpath.exists():
+             logger.warning(f"文档物理文件不存在，跳过: {doc.stored_path}")
+             continue
+
+        try:
+            content = fpath.read_text(encoding="utf-8")
+        except UnicodeDecodeError:
+            logger.warning(f"无法以 UTF-8 读取文件，尝试忽略错误: {doc.stored_path}")
+            content = fpath.read_text(encoding="utf-8", errors="ignore")
+            
         # 截取前 4000 字符避免超长
         content_trimmed = content[:4000]
 
@@ -102,9 +115,9 @@ async def generate_questions(file_names: list[str], num_per_doc: int = 3) -> lis
                             "question": item["question"],
                             "ground_truth": item["ground_truth"],
                         })
-            logger.info(f"✓ 文档 {fname} 成功生成 {len(items)} 道题目")
+            logger.info(f"✓ 文档 {doc.filename} 成功生成 {len(items)} 道题目")
         except Exception as e:
-            logger.error(f"✗ 文档 {fname} 出题失败: {e}")
+            logger.error(f"✗ 文档 {doc.filename} 出题失败: {e}")
 
     return all_questions
 
@@ -221,12 +234,89 @@ async def _run_evaluation_background(task_id: str, questions: list[dict]):
             await db.commit()
             logger.info(f"✓ 评估任务 {task_id} 完成，共 {count} 题")
 
+            # 评估完成后,调用 LLM 生成整体点评(最低指标+优化建议);失败不影响评估结果
+            try:
+                task.current_step = "正在生成评估点评..."
+                await db.commit()
+                avg_scores = {
+                    "faithfulness": task.avg_faithfulness,
+                    "answer_relevancy": task.avg_answer_relevancy,
+                    "context_precision": task.avg_context_precision,
+                    "context_recall": task.avg_context_recall,
+                }
+                task.review = await generate_eval_review(avg_scores, scored_records)
+                task.current_step = "评估完成"
+                await db.commit()
+                logger.info(f"✓ 评估任务 {task_id} 已生成 LLM 点评")
+            except Exception as e:  # noqa: BLE001 点评失败不阻塞评估完成
+                logger.warning(f"生成评估点评失败(不影响评估结果): {e}")
+                task.review = None
+                task.current_step = "评估完成"
+                await db.commit()
+
         except Exception as e:
             logger.exception(f"评估任务 {task_id} 失败: {e}")
             task.status = "failed"
             task.error = str(e)
             task.current_step = f"评估失败: {e}"
             await db.commit()
+
+
+async def generate_eval_review(avg_scores: dict, scored_records: list[dict]) -> str:
+    """基于四维平均分与明细，调用 LLM 生成整体评估点评（最低指标 + 优化建议）。
+
+    参数:
+        avg_scores: {"faithfulness": x, "answer_relevancy": x, "context_precision": x, "context_recall": x}
+        scored_records: 每题明细 [{question, faithfulness, answer_relevancy, context_precision, context_recall}]
+    """
+    from app.services import llm_service
+
+    metric_names = {
+        "faithfulness": "忠实度(Faithfulness)",
+        "answer_relevancy": "回答相关性(Answer Relevancy)",
+        "context_precision": "上下文精确率(Context Precision)",
+        "context_recall": "上下文召回率(Context Recall)",
+    }
+    # 找出得分最低的指标,供点评聚焦
+    valid = {k: v for k, v in avg_scores.items() if v is not None}
+    lowest_key = min(valid, key=valid.get) if valid else None
+
+    # 汇总分数文本
+    score_lines = "\n".join(
+        f"- {metric_names[k]}: {avg_scores[k]}" for k in metric_names if avg_scores.get(k) is not None
+    )
+    # 每题明细摘要(问题 + 四维得分),帮助 LLM 定位弱项;最多取前 20 题防超长
+    detail_lines = []
+    for rec in scored_records[:20]:
+        detail_lines.append(
+            f"问题: {rec.get('question', '')} | "
+            f"忠实度 {rec.get('faithfulness')} | 相关性 {rec.get('answer_relevancy')} | "
+            f"精确率 {rec.get('context_precision')} | 召回率 {rec.get('context_recall')}"
+        )
+    detail_text = "\n".join(detail_lines)
+
+    prompt = f"""你是 RAG（检索增强生成）系统的评估专家。以下是一次 RAG 知识库问答的量化评估结果。
+
+四个评估指标（0~1，越接近 1 越好）的含义：
+- 忠实度(Faithfulness)：回答是否忠于检索到的上下文（越低说明幻觉越严重）
+- 回答相关性(Answer Relevancy)：回答是否切题（越低说明答非所问）
+- 上下文精确率(Context Precision)：检索片段是否相关、相关片段是否排前（越低说明检索/重排噪声多）
+- 上下文召回率(Context Recall)：检索是否覆盖了标准答案所需的信息（越低说明漏检/切片问题）
+
+本次评估的四维平均分：
+{score_lines}
+
+各题明细（问题 | 四维得分）：
+{detail_text}
+
+请输出一份简洁、专业的中文评估点评，要求：
+1. 明确指出得分最低的指标（当前最低：{metric_names.get(lowest_key, '未知')}）
+2. 结合指标含义和明细，分析最可能的原因
+3. 给出 2~3 条具体、可落地的优化建议（可围绕：向量检索、重排、知识库切片、提示词、Embedding 模型等）
+直接输出点评正文，不要额外客套。"""
+
+    answer = await llm_service.ainvoke([{"role": "user", "content": prompt}])
+    return answer.strip()
 
 
 async def _run_ragas_scoring(records_data: list[dict]) -> list[dict]:
@@ -318,3 +408,43 @@ async def get_task_records(db: AsyncSession, task_id: str) -> list[EvalRecord]:
         select(EvalRecord).where(EvalRecord.task_id == task_id).order_by(EvalRecord.created_at)
     )
     return list(result.scalars().all())
+
+
+async def delete_task(db: AsyncSession, task_id: str) -> bool:
+    """删除评估任务及其全部明细记录。返回是否删除成功。"""
+    task = await db.get(EvalTask, task_id)
+    if not task:
+        return False
+    # 先删明细再删任务:双保险,即便外键级联未生效也不留孤儿记录
+    await db.execute(delete(EvalRecord).where(EvalRecord.task_id == task_id))
+    await db.delete(task)
+    await db.commit()
+    return True
+
+
+async def regenerate_review(db: AsyncSession, task_id: str) -> str | None:
+    """重新生成某任务的 LLM 评估点评并写库。返回点评文本,任务不存在返回 None。"""
+    task = await db.get(EvalTask, task_id)
+    if not task:
+        return None
+    records = await get_task_records(db, task_id)
+    avg_scores = {
+        "faithfulness": task.avg_faithfulness,
+        "answer_relevancy": task.avg_answer_relevancy,
+        "context_precision": task.avg_context_precision,
+        "context_recall": task.avg_context_recall,
+    }
+    scored_records = [
+        {
+            "question": r.question,
+            "faithfulness": r.faithfulness,
+            "answer_relevancy": r.answer_relevancy,
+            "context_precision": r.context_precision,
+            "context_recall": r.context_recall,
+        }
+        for r in records
+    ]
+    review = await generate_eval_review(avg_scores, scored_records)
+    task.review = review
+    await db.commit()
+    return review

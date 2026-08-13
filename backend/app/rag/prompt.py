@@ -19,8 +19,8 @@ def build_context(ranked_chunks: list[dict]) -> str:
     """按候选顺序编号拼装知识库片段(编号顺序 = 引用编号 [n] 的映射)。"""
     parts = []
     for i, chunk in enumerate(ranked_chunks, start=1):
-        # 兼容两种数据结构:直接 content 或 qdrant payload 里的 chunk_content
-        content = chunk.get("content") or chunk.get("payload", {}).get("chunk_content") or ""
+        # 兼容三种数据结构:直接 content、qdrant payload 里的 chunk_content 或 text
+        content = chunk.get("content") or chunk.get("payload", {}).get("chunk_content") or chunk.get("payload", {}).get("text") or ""
         parts.append(f"[{i}] {content}")
     # 片段间空行分隔:降低模型把相邻片段误读为同一段落的概率
     return "\n\n".join(parts)

@@ -4,7 +4,8 @@
 import client from './client'
 
 export interface SampleDoc {
-  name: string
+  id: string
+  filename: string
   size_bytes: number
   file_type: string
 }
@@ -26,6 +27,8 @@ export interface EvalTask {
   avg_context_recall: number | null
   source_files: string
   error: string | null
+  /** LLM 生成的整体评估点评(最低指标+优化建议) */
+  review: string | null
   created_at: string
   finished_at: string | null
 }
@@ -46,8 +49,8 @@ export interface EvalRecord {
 export const getSampleDocs = () => client.get<SampleDoc[]>('/evaluation/docs')
 
 /** 根据选中文档生成测试题 */
-export const generateQuestions = (file_names: string[], num_per_doc = 3) =>
-  client.post<QuestionItem[]>('/evaluation/generate', { file_names, num_per_doc })
+export const generateQuestions = (doc_ids: string[], num_per_doc = 3) =>
+  client.post<QuestionItem[]>('/evaluation/generate', { doc_ids, num_per_doc })
 
 /** 启动评估任务 */
 export const startEvaluation = (questions: QuestionItem[], source_files: string[]) =>
@@ -62,3 +65,11 @@ export const getEvalTask = (taskId: string) => client.get<EvalTask>(`/evaluation
 /** 获取评估明细结果 */
 export const getEvalRecords = (taskId: string) =>
   client.get<EvalRecord[]>(`/evaluation/tasks/${taskId}/records`)
+
+/** 删除评估任务及其全部明细记录 */
+export const deleteEvalTask = (taskId: string) =>
+  client.delete<{ ok: boolean }>(`/evaluation/tasks/${taskId}`)
+
+/** 重新生成某任务的 LLM 评估点评(最低指标+优化建议) */
+export const regenerateEvalReview = (taskId: string) =>
+  client.post<{ review: string }>(`/evaluation/tasks/${taskId}/review`)

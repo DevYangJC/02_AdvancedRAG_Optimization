@@ -31,6 +31,8 @@ class EvalTask(Base):
     avg_context_recall: Mapped[float | None] = mapped_column(Float, nullable=True)
     # 参与评估的源文档列表(JSON 字符串: ["商品说明.md", "商品参数.txt"])
     source_files: Mapped[str] = mapped_column(Text, nullable=False, default="[]")
+    # LLM 生成的整体评估点评(哪个指标最低、优化建议);评估完成后自动生成,可为空
+    review: Mapped[str | None] = mapped_column(Text, nullable=True)
     # 失败原因
     error: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
