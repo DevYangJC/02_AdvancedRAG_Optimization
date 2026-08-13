@@ -1,0 +1,14 @@
+# Qdrant 配置 — 本机直跑模式
+# 数据存储于 backend/data/qdrant/(相对本文件所在目录)
+log_level: INFO
+
+storage:
+  storage_path: ../../backend/data/qdrant
+  snapshots_path: ../../backend/data/qdrant/snapshots
+
+service:
+  http_port: 6333
+  grpc_port: 6334
+
+# 遥测与更新检查(生产可关闭)
+telemetry_disabled: true

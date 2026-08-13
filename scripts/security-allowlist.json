@@ -1,0 +1,20 @@
+[
+  "backend\\app\\core\\config.py:49",
+  "backend\\app\\core\\config.py:54",
+  "backend\\app\\schemas\\auth.py:70",
+  "backend\\scripts\\perf_test.py:46",
+  "backend\\tests\\test_permissions.py:7",
+  "backend\\tests\\test_permissions.py:37",
+  "backend\\tests\\test_permissions.py:57",
+  "backend\\tests\\test_permissions.py:65",
+  "backend\\tests\\test_permissions.py:85",
+  "frontend\\src\\types\\api.ts:12",
+  "frontend\\src\\types\\api.ts:13",
+  "frontend\\src\\types\\api.ts:14",
+  "frontend\\src\\views\\LoginView.vue:47",
+  "backend\\tests\\conftest.py:14",
+  "frontend\\src\\stores\\auth.ts:44",
+  "frontend\\src\\views\\ChatView.vue:87",
+  "frontend\\src\\views\\ChatView.vue:95",
+  "frontend\\src\\views\\ChatView.vue:99"
+]

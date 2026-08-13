@@ -1,0 +1,23 @@
+#!/bin/sh
+# Git 提交门禁 hook（模板文件）
+# 由 `npm run hooks:install` 安装到 .git/hooks/pre-commit。
+# 请勿直接编辑安装后的 .git/hooks/pre-commit——如需修改，改本模板后重新执行 npm run hooks:install。
+# 校验逻辑全部在 scripts/gate-check.js（标记新鲜度 + 二次扫描），
+# 本文件只负责定位 node 并执行，保持最小化。
+
+set -u
+
+ROOT="$(git rev-parse --show-toplevel)" || exit 1
+
+# 优先用 PATH 中的 node；找不到时回退 Windows 常见安装路径（GUI git 客户端 PATH 可能被精简）
+NODE_BIN="$(command -v node 2>/dev/null)"
+if [ -z "$NODE_BIN" ] && [ -x "/c/Program Files/nodejs/node.exe" ]; then
+  NODE_BIN="/c/Program Files/nodejs/node.exe"
+fi
+if [ -z "$NODE_BIN" ]; then
+  echo "【门禁】找不到 node，无法执行提交检查" >&2
+  exit 1
+fi
+
+# exec 替换进程，保证 gate-check 的退出码即 hook 退出码
+exec "$NODE_BIN" "$ROOT/scripts/gate-check.js"

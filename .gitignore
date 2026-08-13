@@ -1,0 +1,68 @@
+# =================================================================
+# 1. 密钥与环境配置文件 (Sensitive Keys & Environment Files)
+# =================================================================
+.env
+.env.*
+!.env.example
+*.env
+
+# =================================================================
+# 2. Python 后端与运行时 (Python Backend & Virtual Environment)
+# =================================================================
+__pycache__/
+*.py[cod]
+*$py.class
+.venv/
+venv/
+ENV/
+*.egg-info/
+.pytest_cache/
+.coverage
+htmlcov/
+.ruff_cache/
+*.log
+logs/
+
+# 运行时数据持久化 (数据库、上传的知识文档、Embedding 磁盘缓存)
+backend/data/
+data/
+*.db
+*.db-journal
+*.db-wal
+*.db-shm
+
+# =================================================================
+# 3. Node.js & 前端构建产物 (Frontend Node & Dist Artifacts)
+# =================================================================
+node_modules/
+frontend/node_modules/
+dist/
+frontend/dist/
+frontend/coverage/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+*.local
+
+# =================================================================
+# 4. 二进制可执行文件与本地部署产物 (Binaries & Qdrant Data)
+# =================================================================
+*.exe
+*.dll
+*.so
+*.dylib
+deploy/qdrant/qdrant.exe
+deploy/qdrant/.qdrant-initialized
+deploy/qdrant/storage/
+
+# =================================================================
+# 5. IDE、编辑器与系统临时文件 (IDE & OS Files)
+# =================================================================
+.idea/
+.vscode/
+*.swp
+*.swo
+.DS_Store
+Thumbs.db
+.claude/markers/

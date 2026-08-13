@@ -1,0 +1,110 @@
+version: '3.8'
+
+services:
+  # =================================================================
+  # 1. 向量数据库 (Qdrant) - 本项目核心基础设施
+  # =================================================================
+  qdrant:
+    image: qdrant/qdrant:latest
+    container_name: rag-qdrant
+    restart: unless-stopped
+    ports:
+      - "${QDRANT_PORT:-6333}:6333"
+      - "6334:6334"
+    volumes:
+      - qdrant-data:/qdrant/storage
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:6333/readyz || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  # =================================================================
+  # 2. 关系型数据库 (PostgreSQL + pgvector) - 支撑业务数据与索引
+  # =================================================================
+  postgres:
+    image: pgvector/pgvector:pg16
+    container_name: argus-rag-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-argus_rag}
+      POSTGRES_USER: ${POSTGRES_USER:-root}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-123456}
+    ports:
+      - "${POSTGRES_PORT:-5433}:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-root} -d ${POSTGRES_DB:-argus_rag}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  # =================================================================
+  # 3. 搜索引擎 (Elasticsearch) - 用于全文混合检索与拓展
+  # =================================================================
+  elasticsearch:
+    image: docker.elastic.co/elasticsearch/elasticsearch:8.11.0
+    container_name: argus-rag-elasticsearch
+    restart: unless-stopped
+    environment:
+      - discovery.type=single-node
+      - xpack.security.enabled=false
+      - ES_JAVA_OPTS=${ES_JAVA_OPTS:--Xms384m -Xmx384m}
+    ports:
+      - "${ELASTICSEARCH_PORT:-9200}:9200"
+    volumes:
+      - elasticsearch-data:/usr/share/elasticsearch/data
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://localhost:9200/_cluster/health || exit 1"]
+      interval: 15s
+      timeout: 10s
+      retries: 20
+
+  # =================================================================
+  # 4. 对象存储服务 (MinIO) - 原始文档对象化存储
+  # =================================================================
+  minio:
+    image: minio/minio:RELEASE.2025-09-07T16-13-09Z
+    container_name: argus-rag-minio
+    restart: unless-stopped
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-minioadmin}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-minioadmin}
+    ports:
+      - "${MINIO_API_PORT:-9000}:9000"
+      - "${MINIO_CONSOLE_PORT:-9001}:9001"
+    volumes:
+      - minio-data:/data
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  # =================================================================
+  # 5. Elasticsearch Web 管理界面 (Elasticvue)
+  # =================================================================
+  elasticvue:
+    image: cars10/elasticvue:latest
+    container_name: argus-rag-elasticvue
+    restart: unless-stopped
+    ports:
+      - "${ELASTICVUE_PORT:-8088}:8080"
+    depends_on:
+      elasticsearch:
+        condition: service_healthy
+
+# =================================================================
+# 数据持久化卷定义
+# =================================================================
+volumes:
+  qdrant-data:
+    driver: local
+  postgres-data:
+    driver: local
+  elasticsearch-data:
+    driver: local
+  minio-data:
+    driver: local
