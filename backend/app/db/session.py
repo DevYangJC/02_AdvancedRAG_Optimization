@@ -63,7 +63,7 @@ async_session_maker = async_sessionmaker(engine, expire_on_commit=False, class_=
 async def init_db() -> None:
     """建表(开发期直接 create_all;生产可用 Alembic 迁移)。"""
     from app.db.base import Base
-    from app.models import CacheEntry, Chunk, Conversation, Document, Message, User  # noqa: F401 注册模型
+    from app.models import CacheEntry, Chunk, Conversation, Document, EvalRecord, EvalTask, Message, User  # noqa: F401 注册模型
 
     # begin() 保证建表在单个事务内完成,失败自动回滚,不留半成品表
     async with engine.begin() as conn:

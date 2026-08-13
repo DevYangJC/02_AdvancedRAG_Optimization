@@ -40,6 +40,7 @@ const filteredConversations = computed(() => {
 // 当前激活的模块名
 const activeNav = computed(() => {
   if (route.path.startsWith('/admin/knowledge')) return 'knowledge'
+  if (route.path.startsWith('/admin/evaluation')) return 'evaluation'
   return 'chat'
 })
 
@@ -90,13 +91,13 @@ function formatTime(iso: string): string {
 }
 
 // 导航跳转
-function navigateTo(target: 'chat' | 'knowledge') {
-  if (target === 'knowledge') {
+function navigateTo(target: 'chat' | 'knowledge' | 'evaluation') {
+  if (target === 'knowledge' || target === 'evaluation') {
     if (!auth.isAdmin()) {
-      ElMessage.warning('文档管理需管理员权限')
+      ElMessage.warning('需管理员权限')
       return
     }
-    router.push('/admin/knowledge')
+    router.push(target === 'knowledge' ? '/admin/knowledge' : '/admin/evaluation')
   } else {
     router.push('/chat')
   }
@@ -200,6 +201,17 @@ async function savePassword() {
           >
             <el-icon class="nav-icon"><FolderOpened /></el-icon>
             <span v-if="!isCollapsed" class="nav-text">文档管理</span>
+            <span v-if="!isCollapsed && auth.isAdmin()" class="admin-tag">Admin</span>
+          </div>
+
+          <div
+            class="nav-item"
+            :class="{ active: activeNav === 'evaluation' }"
+            @click="navigateTo('evaluation')"
+            title="RAG 评估"
+          >
+            <el-icon class="nav-icon"><DataAnalysis /></el-icon>
+            <span v-if="!isCollapsed" class="nav-text">RAG 评估</span>
             <span v-if="!isCollapsed && auth.isAdmin()" class="admin-tag">Admin</span>
           </div>
         </nav>

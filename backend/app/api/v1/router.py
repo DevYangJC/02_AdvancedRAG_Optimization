@@ -2,7 +2,7 @@
 # v1 路由聚合点:新增功能模块时在这里挂载一次即可接入主应用
 from fastapi import APIRouter
 
-from app.api.v1 import auth, chat, conversations, documents, health
+from app.api.v1 import auth, chat, conversations, documents, evaluation, health
 
 # 统一 /api 前缀:所有 v1 接口都在 /api 下,网关/反向代理可按前缀分流
 api_router = APIRouter(prefix="/api")
@@ -13,3 +13,5 @@ api_router.include_router(conversations.router)
 # chat 与 documents 是知识库问答核心模块,与其余模块平级挂载
 api_router.include_router(chat.router)
 api_router.include_router(documents.router)
+# RAG 评估模块:文档出题 + Ragas 量化评测
+api_router.include_router(evaluation.router)

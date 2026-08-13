@@ -4,8 +4,9 @@ from app.models.cache_entry import CacheEntry
 from app.models.chunk import Chunk
 from app.models.conversation import Conversation
 from app.models.document import Document
+from app.models.evaluation import EvalRecord, EvalTask
 from app.models.message import Message
 from app.models.user import User
 
 # __all__ 限定 from app.models import * 的可见范围,同时作为"公开 API"清单
-__all__ = ["User", "Conversation", "Message", "Document", "Chunk", "CacheEntry"]
+__all__ = ["User", "Conversation", "Message", "Document", "Chunk", "CacheEntry", "EvalTask", "EvalRecord"]

@@ -43,6 +43,12 @@ const router = createRouter({
           component: () => import('@/views/AdminKnowledgeView.vue'),
           meta: { title: '文档管理', adminOnly: true },
         },
+        {
+          path: 'admin/evaluation',
+          name: 'admin-evaluation',
+          component: () => import('@/views/EvaluationView.vue'),
+          meta: { title: 'RAG 评估', adminOnly: true },
+        },
       ],
     },
   ],
